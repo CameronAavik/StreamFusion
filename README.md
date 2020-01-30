@@ -15,7 +15,7 @@ As an example it can convert the following code:
 
 into the following equivalent imperative code:
 
-```
+```fsharp
 let total = ref 0
 let arr = [|0; 1; 2; 3; 4|]
 for i in 0..(Array.length arr - 1) do
