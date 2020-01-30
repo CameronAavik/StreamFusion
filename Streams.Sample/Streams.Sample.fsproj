@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Streamly\Streams.fsproj" />
+    <ProjectReference Include="..\Streams\Streams.fsproj" />
   </ItemGroup>
 
 </Project>

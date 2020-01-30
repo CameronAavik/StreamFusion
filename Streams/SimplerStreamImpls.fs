@@ -53,9 +53,9 @@ module StreamImpls =
         static member fold folder initState ((s, step) : StStream1<_, _>) =
             <@
                 let rec loop z s =
-                    match ((% Msp.lambda step) s) with
+                    match ((% ExprHelpers.lambda step) s) with
                     | Nil -> z
-                    | Cons (a, t) -> loop ((% Msp.lambda2 folder) z a) t
+                    | Cons (a, t) -> loop ((% ExprHelpers.lambda2 folder) z a) t
                 loop %initState %s
             @>
 
@@ -64,17 +64,17 @@ module StreamImpls =
                 <@
                     match (% step s) with
                     | Nil -> Nil
-                    | Cons (a, t) -> Cons ((% Msp.lambda f) a, t)
+                    | Cons (a, t) -> Cons ((% ExprHelpers.lambda f) a, t)
                 @>
             s, new_step
 
     type StStream2<'x, 's, 'w> = Expr<'s> * (Expr<'s> -> (StreamShape<Expr<'x>, Expr<'s>> -> Expr<'w>) -> Expr<'w>)
     type StStream2 =
         static member ofArray (arr : Expr<'a array>) : StStream2<'a, _, _> =
-            let iVar = Msp.generateVar typeof<int>
+            let iVar = ExprHelpers.generateVar typeof<int>
             let iExpr = Expr.Cast<int>(Expr.Var(iVar))
 
-            let arrVar = Msp.generateVar typeof<'a array>
+            let arrVar = ExprHelpers.generateVar typeof<'a array>
             let arrExpr = Expr.Cast<'a array>(Expr.Var(arrVar))
 
             let step state k =
@@ -96,9 +96,9 @@ module StreamImpls =
                 | Nil -> state
                 | Cons (a, t) -> <@ (%loop) (% folder state a) %t @>
 
-            let loopVar = Msp.generateVar typeof<'b -> 's -> 'b>
-            let zVar = Msp.generateVar typeof<'b>
-            let sVar = Msp.generateVar typeof<'s>
+            let loopVar = ExprHelpers.generateVar typeof<'b -> 's -> 'b>
+            let zVar = ExprHelpers.generateVar typeof<'b>
+            let sVar = ExprHelpers.generateVar typeof<'s>
 
             let loopBody = step (Expr.Cast<_>(Expr.Var(sVar))) (handleStream (Expr.Cast<_>(Expr.Var(loopVar))) (Expr.Cast<_>(Expr.Var(zVar))))
 
@@ -114,7 +114,7 @@ module StreamImpls =
             Expr.Cast<'b>(loopDefExpr)
 
         static member map f ((s, step) : StStream2<'a, _, _>) : StStream2<'b, _, _> =
-            let var = Msp.generateVar typeof<'a>
+            let var = ExprHelpers.generateVar typeof<'a>
             let new_step s k =
                 let handleStream =
                     function
@@ -131,11 +131,11 @@ module StreamImpls =
 
     type StStream3 =
         static member ofArray (arr : Expr<'a array>) : StStream3<'a, _, _> =
-            let iVar = Msp.generateVar typeof<int ref>
+            let iVar = ExprHelpers.generateVar typeof<int ref>
             let iExpr = Expr.Cast<_>(Expr.Var(iVar))
-            let arrVar = Msp.generateVar typeof<'a array>
+            let arrVar = ExprHelpers.generateVar typeof<'a array>
             let arrExpr = Expr.Cast<'a array>(Expr.Var(arrVar))
-            let elemVar = Msp.generateVar typeof<'a>
+            let elemVar = ExprHelpers.generateVar typeof<'a>
             let elemExpr = Expr.Cast<'a>(Expr.Var(elemVar))
 
             let init arr k =
@@ -158,9 +158,9 @@ module StreamImpls =
             (init arr, step)
 
         static member fold (folder : Expr<'b> -> Expr<'a> -> Expr<'b>) (initState : Expr<'b>) ((init, step) : StStream3<'a, 's, _>) =
-            let loopVar = Msp.generateVar typeof<'b -> 'b>
+            let loopVar = ExprHelpers.generateVar typeof<'b -> 'b>
             let loopExpr = Expr.Cast<_>(Expr.Var(loopVar))
-            let zVar = Msp.generateVar typeof<'b>
+            let zVar = ExprHelpers.generateVar typeof<'b>
             let zExpr = Expr.Cast<'b>(Expr.Var(zVar))
 
             let handleStream s =
@@ -177,7 +177,7 @@ module StreamImpls =
             init handleState
 
         static member map f ((s, step) : StStream3<'a, _, _>) : StStream3<'b, _, _> =
-            let var = Msp.generateVar typeof<'a>
+            let var = ExprHelpers.generateVar typeof<'a>
             let new_step s k =
                 let handleStream =
                     function
@@ -213,7 +213,7 @@ module StreamImpls =
                     member _.Invoke<'s>(s) =
                         match s with
                         | (init, For (upb, index)) ->
-                            let iVar = Msp.generateVar typeof<int ref>
+                            let iVar = ExprHelpers.generateVar typeof<int ref>
                             let iExpr = Expr.Cast<_>(Expr.Var(iVar))
 
                             let init =
@@ -254,7 +254,7 @@ module StreamImpls =
                     member _.Invoke<'s>(s : (Init4<'s> * Producer4<'a, 's>)) =
                         match s with
                         | (init, For (upb, index)) ->
-                            let iVar = Msp.generateVar typeof<int>
+                            let iVar = ExprHelpers.generateVar typeof<int>
                             let iExpr = Expr.Cast<int>(Expr.Var(iVar))
                             init.Invoke (fun sp -> Expr.Cast<_>(Expr.ForIntegerRangeLoop(iVar, <@ 0 @>, upb sp, <@ (% index sp iExpr consumer) @>)))
                         | (init, Unfold (term, step)) ->
@@ -264,9 +264,9 @@ module StreamImpls =
     type Stream4<'x> = StStream4<Expr<'x>>
     type Stream4 =
         static member ofArray (arr : Expr<'a array>) : Stream4<'a> =
-            let arrVar = Msp.generateVar typeof<'a array>
+            let arrVar = ExprHelpers.generateVar typeof<'a array>
             let arrExpr = Expr.Cast<'a array>(Expr.Var(arrVar))
-            let elemVar = Msp.generateVar typeof<'a>
+            let elemVar = ExprHelpers.generateVar typeof<'a>
             let elemExpr = Expr.Cast<'a>(Expr.Var(elemVar))
 
             let init = 
@@ -285,14 +285,14 @@ module StreamImpls =
             StStreamConstr(init, For (upb, index)) :> Stream4<'a>
 
         static member fold (folder : Expr<'b> -> Expr<'a> -> Expr<'b>) (initState : Expr<'b>) (str : Stream4<'a>) =
-            let stateVar = Msp.generateVar typeof<'b ref>
+            let stateVar = ExprHelpers.generateVar typeof<'b ref>
             let stateExpr = Expr.Cast<'b ref>(Expr.Var(stateVar))
             Expr.Cast<_>(
                 Expr.Let(stateVar, <@ ref %initState @>,
                     <@ (% (StStream4.foldRaw (fun a -> <@ (%stateExpr) := (% folder <@ !(%stateExpr) @> a) @>) str); !(%stateExpr)) @> ))
 
         static member map (f : Expr<'a> -> Expr<'b>) (str : Stream4<'a>) : Stream4<'b> =
-            let var = Msp.generateVar typeof<'b>
+            let var = ExprHelpers.generateVar typeof<'b>
             let varExpr = Expr.Cast<'b>(Expr.Var(var))
             let newStep (a : Expr<'a>) (k : Expr<'b> -> Expr<unit>) = Expr.Cast<unit>(Expr.Let(var, f a, k varExpr))
             StStream4.mapRaw newStep str

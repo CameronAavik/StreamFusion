@@ -4,11 +4,11 @@ open System
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Reflection
 
-module Msp =
+module ExprHelpers =
     let counter = ref 0
     let generateVar (typ : Type) : Var = 
         incr counter
-        new Var(sprintf "__genVar_%d" !counter, typ)
+        new Var(sprintf "__x%d" !counter, typ)
 
     let lambda (f : Expr<'T> -> Expr<'R>) : Expr<'T -> 'R> =
         let var = generateVar typeof<'T>
@@ -73,7 +73,7 @@ module Streams =
                     member _.Invoke { Init=init; Shape=shape } = 
                         match shape with
                         | For { Upb=upb; Index=index } -> 
-                            let iVar = Msp.generateVar typeof<int ref>
+                            let iVar = ExprHelpers.generateVar typeof<int ref>
                             let iExpr = Expr.Cast<_>(Expr.Var(iVar))
 
                             let init =
@@ -113,7 +113,7 @@ module Streams =
                                         let getProducerCode sp =
                                             match shape with
                                             | For { Upb=upb; Index=index } ->
-                                                let iVar = Msp.generateVar typeof<int>
+                                                let iVar = ExprHelpers.generateVar typeof<int>
                                                 let iExpr = Expr.Cast<int>(Expr.Var(iVar))
                                                 Expr.Cast<_>(Expr.ForIntegerRangeLoop(iVar, <@ 0 @>, upb sp, <@ (% index sp iExpr consumer) @>))
                                             | Unfold { Term=term; Card=AtMost1; Step=step } ->
@@ -165,7 +165,7 @@ module Streams =
 
     module Stream =
         let foldExpr f z str =
-            let sVar = Msp.generateVar typeof<'z ref>
+            let sVar = ExprHelpers.generateVar typeof<'z ref>
             let sExpr = Expr.Cast<'z ref>(Expr.Var(sVar))
             let foldRawBody = 
                 Expr.Sequential(
@@ -178,9 +178,9 @@ module Streams =
         let fold f z str = foldExpr f <@ z @> str
 
         let foldTupled f1 z1 f2 z2 str =
-            let s1Var = Msp.generateVar typeof<'z1 ref>
+            let s1Var = ExprHelpers.generateVar typeof<'z1 ref>
             let s1Expr = Expr.Cast<'z1 ref>(Expr.Var(s1Var))
-            let s2Var = Msp.generateVar typeof<'z2 ref>
+            let s2Var = ExprHelpers.generateVar typeof<'z2 ref>
             let s2Expr = Expr.Cast<'z2 ref>(Expr.Var(s2Var))
             let foldRawBody = 
                 Expr.Sequential(
@@ -193,9 +193,9 @@ module Streams =
                     Expr.Let(s2Var, <@ ref %z2 @>, foldRawBody)))
 
         let ofArrayExpr arr =
-            let arrVar = Msp.generateVar typeof<'a array>
+            let arrVar = ExprHelpers.generateVar typeof<'a array>
             let arrExpr = Expr.Cast<'a array>(Expr.Var(arrVar))
-            let elemVar = Msp.generateVar typeof<'a>
+            let elemVar = ExprHelpers.generateVar typeof<'a>
             let elemExpr = Expr.Cast<'a>(Expr.Var(elemVar))
 
             let init = 
@@ -212,13 +212,13 @@ module Streams =
         let ofArray arr = ofArrayExpr <@ arr @>
 
         let unfold (p : Expr<'z> -> Expr<Option<'a * 'z>>) (z : Expr<'z>) =
-            let sVar = Msp.generateVar typeof<Option<'a * 'z> ref>
+            let sVar = ExprHelpers.generateVar typeof<Option<'a * 'z> ref>
             let sExpr = Expr.Cast<Option<'a * 'z> ref>(Expr.Var(sVar))
-            let matchVar = Msp.generateVar typeof<Option<'a * 'z>>
+            let matchVar = ExprHelpers.generateVar typeof<Option<'a * 'z>>
             let matchExpr = Expr.Cast<Option<'a * 'z>>(Expr.Var(matchVar))
-            let elVar = Msp.generateVar typeof<'a>
+            let elVar = ExprHelpers.generateVar typeof<'a>
             let elExpr = Expr.Cast<'a>(Expr.Var(elVar))
-            let stateVar = Msp.generateVar typeof<'z>
+            let stateVar = ExprHelpers.generateVar typeof<'z>
             let stateExpr = Expr.Cast<'z>(Expr.Var(stateVar))
 
             let someUnionCase = FSharpType.GetUnionCases(typeof<Option<'a * 'z>>).[1]
@@ -246,7 +246,7 @@ module Streams =
             Linear { Init=init; Shape=Unfold { Term=term; Card=Many; Step=step } }
 
         let map f stream =
-            let tVar = Msp.generateVar typeof<'b>
+            let tVar = ExprHelpers.generateVar typeof<'b>
             let tExpr = Expr.Cast<'b>(Expr.Var(tVar))
             let mapExpr a k = Expr.Cast<_>(Expr.Let(tVar, f a, k tExpr))
             StStream.mapRaw mapExpr stream
