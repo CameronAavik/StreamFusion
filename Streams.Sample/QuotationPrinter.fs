@@ -22,15 +22,7 @@
         let print fmt = Printf.fprintf w fmt
         let println fmt = Printf.fprintfn w fmt
 
-        let rec go (e : E, newLineAfterAttr) = 
-            let isWrapped =
-                match e.CustomAttributes with
-                //| [P.NewTuple([_; P.NewTuple([file; P.Value(sl, _); P.Value(sc, _); P.Value(el, _); P.Value(ec, _)])])] -> 
-                //    print "[DebugRange(%O:%O - %O:%O)] <{ " sl sc el ec
-                //    if newLineAfterAttr then newline()
-                //    true                
-                | _ -> false
-
+        let rec go (e : E) = 
             match e with
             | P.Var(v) -> print "%s" v.Name
             | P.Value(v, _) -> print "%A" v
@@ -44,48 +36,48 @@
                     if i <> 0 then
                         println "," 
                     print "%s = ( " f.Name
-                    go(v, false)
+                    go(v)
                     print ")"            )            
                 untab(true)
                 println "}"
             | DP.SpecificCall <@ (=) @>(_, _, [a; b]) ->
-                go(a, false)
+                go(a)
                 print " = "
-                go(b, false)
+                go(b)
             | DP.SpecificCall <@ (-) @> (_, _, [a; b]) ->
-                go(a, false)
+                go(a)
                 print " - "
-                go(b, false)
+                go(b)
             | DP.SpecificCall <@ (*) @> (_, _, [a; b]) ->
-                go(a, false)
+                go(a)
                 print " * "
-                go(b, false)
+                go(b)
             | DP.SpecificCall <@ (+) @> (_, _, [a; b]) ->
-                go(a, false)
+                go(a)
                 print " + "
-                go(b, false)
+                go(b)
             | DP.SpecificCall <@ ignore @>(_, _, [a]) -> 
                 print "ignore"
-                go(a, false)
+                go(a)
                 print ")"
             | P.Let(var, value, body) -> 
                 println "let %s : %s = " var.Name var.Type.Name
                 tab()
-                go(value, true)
+                go(value)
                 newline()
                 println "in"
-                go(body, true)
+                go(body)
                 untab(false)
             | P.LetRecursive([var, value], body) -> 
                 println "let rec %s : %s = " var.Name var.Type.Name
                 tab()
-                go(value, true)
+                go(value)
                 newline()
                 println "in"
-                go(body, true)
+                go(body)
                 untab(false)
             | P.PropertyGet(Some inst, pi, _) -> 
-                go(inst, false)
+                go(inst)
                 print ".%s" pi.Name
             | P.NewObject(ci, args) ->
                 print "new %s (" ci.DeclaringType.Name
@@ -96,7 +88,7 @@
                     |> Seq.iteri (fun i v ->
                         if i <> 0 then
                             println "," 
-                        go(v, false)
+                        go(v)
                     )            
                     untab(true)
                 println ")"
@@ -107,7 +99,7 @@
                     args |> Seq.iteri (fun i arg ->
                         if i <> 0 then
                             println "," 
-                        go(arg, true)
+                        go(arg)
                     )
                     untab(true)
                 println "]"
@@ -118,58 +110,58 @@
                     args |> Seq.iteri (fun i arg ->
                         if i <> 0 then
                             println "," 
-                        go(arg, true)
+                        go(arg)
                     )
                     untab(true)
                 println ")"
             | P.Application(app, arg) ->
-                go(app, false)
+                go(app)
                 println "("
                 tab()
-                go(arg, false)
+                go(arg)
                 untab(true)
                 println ")"
             | P.WhileLoop(cond, body) ->
                 println "while("
-                go(cond, false)
+                go(cond)
                 println ") {"
                 tab()
-                go(body, true)
+                go(body)
                 untab(true)
                 println "}"
             | P.ForIntegerRangeLoop(var, s, e, body) -> 
                 print "for("
-                go (E.Var var, false)
+                go (E.Var var)
                 print " in "
-                go(s, false)
+                go(s)
                 print ".."
-                go(e, false)
+                go(e)
                 println " {"
                 tab()
-                go(body, true)
+                go(body)
                 untab(true)
                 println "}"
             | P.Lambda(var, body) ->
                 println "(fun %s : %s -> " var.Name var.Type.Name
                 tab()
-                go(body, true)
+                go(body)
                 untab(true)
                 println ")"
             | P.IfThenElse(cond, ifTrue, ifFalse) ->
                 println "if ("
-                go(cond, false)
+                go(cond)
                 println ") {"
                 tab()
-                go(ifTrue, true)
+                go(ifTrue)
                 untab(true)
                 println "} else {"
                 tab()
-                go(ifFalse, true)
+                go(ifFalse)
                 untab(true)
                 println "}"
             | P.UnionCaseTest(e, ucase) -> 
                 print "UnionCaseTest ("
-                go(e, false)
+                go(e)
                 print ") is %s" ucase.Name
             | P.NewUnionCase(ucase, args) ->
                 print "%s" ucase.Name
@@ -180,43 +172,42 @@
                     |> Seq.iteri (fun i v ->
                         if i <> 0 then
                             println "," 
-                        go(v, false)
+                        go(v)
                     )            
                     untab(true)
                 println ")"
             | P.Sequential(a, b) ->
-                go(a, false)
+                go(a)
                 newline()
-                go(b, false)
+                go(b)
             | P.PropertySet(Some inst, pi, _, value) ->
-                go(inst, false)
+                go(inst)
                 print ".%s <-" pi.Name
-                go(value, false)
+                go(value)
             | P.FieldGet(Some inst, fi) ->
-                go(inst, false)
+                go(inst)
                 print ".%s" fi.Name
             | P.FieldSet(Some inst, fi, value) ->
-                go(inst, false)
+                go(inst)
                 print ".%s <-" fi.Name
-                go(value, false)
+                go(value)
             | P.TupleGet(expr, idx) ->
                 print "TupleGet ("
-                go (expr, false)
+                go (expr)
                 print ", %i)" idx
             | P.NewTuple(exprs) ->
                 match exprs with
                 | [] -> print "()"
                 | x :: xs ->
                     print "("
-                    go (x, false)
+                    go (x)
                     xs |> Seq.iter (fun expr ->
                         print ", "
-                        go (expr, false))
+                        go (expr))
                     print ")"
             | x -> failwithf "unexpected %A" x
-            if isWrapped then print " }>"
         
-        go(e, true)
+        go(e)
         sw.ToString()
 
     let normalize (s : string) = 

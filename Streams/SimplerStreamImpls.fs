@@ -39,7 +39,7 @@ module StreamImpls =
 
     type StStream1<'x, 's> = Expr<'s> * (Expr<'s> -> Expr<StreamShape<'x, 's>>)
     type StStream1 =
-        static member ofArray (arr : Expr<'a array>) : StStream1<'a, int * 'a array> =
+        static member ofArray arr : StStream1<_, _> =
             let step state =
                 <@
                     match %state with
@@ -53,74 +53,47 @@ module StreamImpls =
         static member fold folder initState ((s, step) : StStream1<_, _>) =
             <@
                 let rec loop z s =
-                    match ((% ExprHelpers.lambda step) s) with
+                    match ((% ExprHelpers.lambda "s" step) s) with
                     | Nil -> z
-                    | Cons (a, t) -> loop ((% ExprHelpers.lambda2 folder) z a) t
+                    | Cons (a, t) -> loop ((% ExprHelpers.lambda2 "z" "a" folder) z a) t
                 loop %initState %s
             @>
 
-        static member map (f : Expr<'a> -> Expr<'b>) ((s, step) : StStream1<'a, 'c>) : StStream1<'b, 'c> =
+        static member map f ((s, step) : StStream1<_, _>) : StStream1<_, _> =
             let new_step s =
                 <@
                     match (% step s) with
                     | Nil -> Nil
-                    | Cons (a, t) -> Cons ((% ExprHelpers.lambda f) a, t)
+                    | Cons (a, t) -> Cons ((% ExprHelpers.lambda "a" f) a, t)
                 @>
             s, new_step
 
     type StStream2<'x, 's, 'w> = Expr<'s> * (Expr<'s> -> (StreamShape<Expr<'x>, Expr<'s>> -> Expr<'w>) -> Expr<'w>)
     type StStream2 =
-        static member ofArray (arr : Expr<'a array>) : StStream2<'a, _, _> =
-            let iVar = ExprHelpers.generateVar typeof<int>
-            let iExpr = Expr.Cast<int>(Expr.Var(iVar))
-
-            let arrVar = ExprHelpers.generateVar typeof<'a array>
-            let arrExpr = Expr.Cast<'a array>(Expr.Var(arrVar))
-
+        static member ofArray arr : StStream2<_, _, _> =
             let step state k =
-                let buildStreamExpr =
+                let buildStreamExpr i arr =
                     <@
-                        if %iExpr < Array.length %arrExpr then
-                            (% k (Cons (<@ (%arrExpr).[%iExpr] @>, <@ %iExpr + 1, %arrExpr @>)))
+                        if %i < Array.length %arr then
+                            (% k (Cons (<@ (%arr).[%i] @>, <@ %i + 1, %arr @>)))
                         else (% k Nil)
                     @>
-                Expr.Cast<_>(
-                    Expr.Let(iVar, Expr.TupleGet(state, 0), 
-                        Expr.Let(arrVar, Expr.TupleGet(state, 1), 
-                            buildStreamExpr)))
+                ExprHelpers.genUnpackTuple "i" "arr" state buildStreamExpr
             <@ (0, %arr) @>, step
 
-        static member fold (folder : Expr<'b> -> Expr<'a> -> Expr<'b>) (initState : Expr<'b>) ((s, step) : StStream2<'a, 's, _>) =
-            let handleStream loop state : StreamShape<Expr<'a>, Expr<'s>> -> Expr<'b> =
+        static member fold folder initState ((s, step) : StStream2<_, _, _>) =
+            let handleStream loop state  =
                 function
                 | Nil -> state
                 | Cons (a, t) -> <@ (%loop) (% folder state a) %t @>
 
-            let loopVar = ExprHelpers.generateVar typeof<'b -> 's -> 'b>
-            let zVar = ExprHelpers.generateVar typeof<'b>
-            let sVar = ExprHelpers.generateVar typeof<'s>
+            ExprHelpers.genLetRec2 "loop" "z" "s" (fun loop z s -> step s (handleStream loop z)) (fun loop -> <@ (%loop) %initState %s @>)
 
-            let loopBody = step (Expr.Cast<_>(Expr.Var(sVar))) (handleStream (Expr.Cast<_>(Expr.Var(loopVar))) (Expr.Cast<_>(Expr.Var(zVar))))
-
-            // loop %z %s
-            let callLoopExpr = Expr.Application(Expr.Application(Expr.Var(loopVar), initState), s)
-
-            // let rec loop z s = loopBody in callLoopExpr 
-            let loopDefExpr = 
-                Expr.LetRecursive(
-                    [loopVar, Expr.Lambda(zVar, Expr.Lambda(sVar, loopBody))],
-                    callLoopExpr)
-
-            Expr.Cast<'b>(loopDefExpr)
-
-        static member map f ((s, step) : StStream2<'a, _, _>) : StStream2<'b, _, _> =
-            let var = ExprHelpers.generateVar typeof<'a>
+        static member map f ((s, step) : StStream2<_, _, _>) : StStream2<_, _, _> =
             let new_step s k =
                 let handleStream =
                     function
-                    | Cons (a, t) ->
-                        let applyMapExpr = k (Cons (Expr.Cast<'b>(Expr.Var(var)), t)) // k (Cons (<@ a' @>, t))
-                        Expr.Cast<'b>(Expr.Let(var, f a, applyMapExpr)) // let a' = (% f a) in applyMapExpr
+                    | Cons (a, t) -> ExprHelpers.genLet "a'" (f a) (fun a' -> k (Cons (a', t)))
                     | Nil -> k Nil
                 step s handleStream
             s, new_step
@@ -130,60 +103,36 @@ module StreamImpls =
         ('s -> (StreamShape<Expr<'x>, unit> -> Expr<'w>) -> Expr<'w>)
 
     type StStream3 =
-        static member ofArray (arr : Expr<'a array>) : StStream3<'a, _, _> =
-            let iVar = ExprHelpers.generateVar typeof<int ref>
-            let iExpr = Expr.Cast<_>(Expr.Var(iVar))
-            let arrVar = ExprHelpers.generateVar typeof<'a array>
-            let arrExpr = Expr.Cast<'a array>(Expr.Var(arrVar))
-            let elemVar = ExprHelpers.generateVar typeof<'a>
-            let elemExpr = Expr.Cast<'a>(Expr.Var(elemVar))
-
+        static member ofArray arr : StStream3<'a, _, _> =
             let init arr k =
-                Expr.Cast<_>(
-                    Expr.Let(iVar, <@ ref 0 @>,
-                        Expr.Let(arrVar, arr,
-                            k (iExpr, arrExpr))))
+                ExprHelpers.genLet2 "i" <@ ref 0 @> "arr" arr (fun i arr -> k (i, arr))
 
             let step (i, arr) k =
-                Expr.Cast<_>(
-                    Expr.IfThenElse(
-                        <@ !(%i) < Array.length %arr @>,
-                        Expr.Let(elemVar, <@ (%arr).[!(%i)] @>,
-                            <@
-                                incr %i
-                                (%k (Cons (elemExpr, ())))
-                            @>),
-                        <@ (%k Nil) @>))
+                let handleShouldStep =
+                    ExprHelpers.genLet "elem" <@ Array.item !(%i) %arr @>
+                        (fun elem -> <@ incr %i; (%k (Cons (elem, ()))) @>)
 
+                <@ if !(%i) < Array.length %arr then %handleShouldStep else (%k Nil) @>
             (init arr, step)
 
-        static member fold (folder : Expr<'b> -> Expr<'a> -> Expr<'b>) (initState : Expr<'b>) ((init, step) : StStream3<'a, 's, _>) =
-            let loopVar = ExprHelpers.generateVar typeof<'b -> 'b>
-            let loopExpr = Expr.Cast<_>(Expr.Var(loopVar))
-            let zVar = ExprHelpers.generateVar typeof<'b>
-            let zExpr = Expr.Cast<'b>(Expr.Var(zVar))
-
-            let handleStream s =
+        static member fold folder initState ((init, step) : StStream3<'a, 's, _>) =
+            let handleStream loopExpr zExpr s =
                 match s with
                 | Nil -> zExpr
                 | Cons (a, _) -> <@ (%loopExpr) (% folder zExpr a) @>
 
             let handleState s =
-                Expr.Cast<_>(
-                    Expr.LetRecursive(
-                        [loopVar, Expr.Lambda(zVar, step s handleStream)],
-                        <@ (%loopExpr) %initState @>))
+                ExprHelpers.genLetRec "loop" "z"
+                    (fun loop z -> step s (handleStream loop z))
+                    (fun loop -> <@ (%loop) %initState @>)
 
             init handleState
 
-        static member map f ((s, step) : StStream3<'a, _, _>) : StStream3<'b, _, _> =
-            let var = ExprHelpers.generateVar typeof<'a>
+        static member map f ((s, step) : StStream3<_, _, _>) : StStream3<_, _, _> =
             let new_step s k =
                 let handleStream =
                     function
-                    | Cons (a, t) ->
-                        let applyMapExpr = k (Cons (Expr.Cast<'b>(Expr.Var(var)), t)) // k (Cons (<@ a' @>, t))
-                        Expr.Cast<'b>(Expr.Let(var, f a, applyMapExpr)) // let a' = (% f a) in applyMapExpr
+                    | Cons (a, t) -> ExprHelpers.genLet "a'" (f a) (fun a' -> k (Cons (a', t)))
                     | Nil -> k Nil
                 step s handleStream
             s, new_step
@@ -213,16 +162,10 @@ module StreamImpls =
                     member _.Invoke<'s>(s) =
                         match s with
                         | (init, For (upb, index)) ->
-                            let iVar = ExprHelpers.generateVar typeof<int ref>
-                            let iExpr = Expr.Cast<_>(Expr.Var(iVar))
-
                             let init =
                                 { new Init4<_> with
                                     member _.Invoke k = 
-                                        let init' s0 =
-                                            Expr.Cast<_>(
-                                                Expr.Let(iVar, <@ ref 0 @>,
-                                                    k (iExpr, s0)))
+                                        let init' s0 = ExprHelpers.genLet "i" <@ ref 0 @> (fun i -> k (i, s0))
                                         init.Invoke init' }
 
                             let term (i, s0 : 's) = <@ !(%i) <= (% upb s0) @>
@@ -248,51 +191,31 @@ module StreamImpls =
                             StStreamConstr(init, Unfold (term, step)) :> StStream4<'b> }
             stStream.Invoke unpack 
 
-        static member foldRaw (consumer : 'a -> Expr<unit>) (stStream : StStream4<'a>) =
+        static member foldRaw consumer (stStream : StStream4<'a>) =
             let unpack =
-                { new StStreamUnPack4<'a, Expr<unit>> with
-                    member _.Invoke<'s>(s : (Init4<'s> * Producer4<'a, 's>)) =
+                { new StStreamUnPack4<_, _> with
+                    member _.Invoke s =
                         match s with
                         | (init, For (upb, index)) ->
-                            let iVar = ExprHelpers.generateVar typeof<int>
-                            let iExpr = Expr.Cast<int>(Expr.Var(iVar))
-                            init.Invoke (fun sp -> Expr.Cast<_>(Expr.ForIntegerRangeLoop(iVar, <@ 0 @>, upb sp, <@ (% index sp iExpr consumer) @>)))
+                            init.Invoke (fun sp -> ExprHelpers.genFor "i" <@ 0 @> (upb sp) (fun i -> index sp i consumer))
                         | (init, Unfold (term, step)) ->
                             init.Invoke (fun sp -> <@ while (%term sp) do (% step sp consumer) @>) }
             stStream.Invoke unpack 
 
     type Stream4<'x> = StStream4<Expr<'x>>
     type Stream4 =
-        static member ofArray (arr : Expr<'a array>) : Stream4<'a> =
-            let arrVar = ExprHelpers.generateVar typeof<'a array>
-            let arrExpr = Expr.Cast<'a array>(Expr.Var(arrVar))
-            let elemVar = ExprHelpers.generateVar typeof<'a>
-            let elemExpr = Expr.Cast<'a>(Expr.Var(elemVar))
-
-            let init = 
-                { new Init4<Expr<'a array>> with 
-                    member _.Invoke (k : Expr<'a array> -> Expr<'w>) = 
-                        Expr.Cast<'w>(
-                            Expr.Let(arrVar, arr, 
-                                k arrExpr)) }
-
+        static member ofArray arr : Stream4<_> =
+            let init k = ExprHelpers.genLet "arr" arr k
             let upb arr = <@ (Array.length %arr) - 1 @>
-            let index arr i k =
-                Expr.Cast<_>(
-                    Expr.Let(elemVar, <@ Array.item %i %arr @>,
-                        k elemExpr))
+            let index arr i k = ExprHelpers.genLet "elem" <@ Array.item %i %arr @> k
 
-            StStreamConstr(init, For (upb, index)) :> Stream4<'a>
+            let initObj = { new Init4<_> with member _.Invoke k = init k }
+            StStreamConstr(initObj, For (upb, index)) :> Stream4<_>
 
-        static member fold (folder : Expr<'b> -> Expr<'a> -> Expr<'b>) (initState : Expr<'b>) (str : Stream4<'a>) =
-            let stateVar = ExprHelpers.generateVar typeof<'b ref>
-            let stateExpr = Expr.Cast<'b ref>(Expr.Var(stateVar))
-            Expr.Cast<_>(
-                Expr.Let(stateVar, <@ ref %initState @>,
-                    <@ (% (StStream4.foldRaw (fun a -> <@ (%stateExpr) := (% folder <@ !(%stateExpr) @> a) @>) str); !(%stateExpr)) @> ))
+        static member fold folder initState (str : Stream4<_>) =
+            ExprHelpers.genLet "state" <@ ref %initState @> 
+                (fun state -> <@ (% (StStream4.foldRaw (fun a -> <@ (%state) := (% folder <@ !(%state) @> a) @>) str); !(%state)) @> )
 
-        static member map (f : Expr<'a> -> Expr<'b>) (str : Stream4<'a>) : Stream4<'b> =
-            let var = ExprHelpers.generateVar typeof<'b>
-            let varExpr = Expr.Cast<'b>(Expr.Var(var))
-            let newStep (a : Expr<'a>) (k : Expr<'b> -> Expr<unit>) = Expr.Cast<unit>(Expr.Let(var, f a, k varExpr))
+        static member map f (str : Stream4<_>) : Stream4<_> =
+            let newStep a k = ExprHelpers.genLet "var" (f a) k
             StStream4.mapRaw newStep str
